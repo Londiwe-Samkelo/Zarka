@@ -7,7 +7,7 @@ Zarka is an offline-first money transfer app for Southern Africa. Smartphones sa
 ```text
 ┌────────────────────────────────────────┐
 │             SMARTPHONE APP             │
-│  • Send screen: fees + exchange rate   │
+│  • Send screen: fees + exchange rate  
 │  • Status tracker (4 stages)           │
 │  • English + Shona text                │
 └───────────────────┬────────────────────┘
