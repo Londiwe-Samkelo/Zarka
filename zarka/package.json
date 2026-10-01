@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "ussd": "node ussd/ussd.js"
   },
   "dependencies": {
     "next": "16.3.8",
