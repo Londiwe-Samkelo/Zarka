@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { Transaction } from "@/types/remittance";
+import { transferStore as processedTransfers } from "@/lib/transferStore";
 
 // In-memory store to guarantee deduplication / no double sends[cite: 12]
-const processedTransfers = new Map<string, Transaction>();
+// const processedTransfers = new Map<string, Transaction>();
 
 export async function POST(request: Request) {
     try {
