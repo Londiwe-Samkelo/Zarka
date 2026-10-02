@@ -28,3 +28,10 @@ export interface FxRate {
     usdToZar?: number;
     lastUpdated?: string;
 }
+
+export interface FxRate {
+    zarToUsd: number;
+    usdToZar?: number;
+    lastUpdated?: string;
+    trend?: string;
+}

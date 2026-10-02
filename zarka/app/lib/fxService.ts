@@ -29,6 +29,6 @@ export function calculateRemittance(amountZAR: number, rate: number) {
         netAmountZAR,
         receiveAmountUSD,
         exchangeRate: rate,
-        zarToUsd: 0.054,
+        zarToUsd: rate,
     };
 }

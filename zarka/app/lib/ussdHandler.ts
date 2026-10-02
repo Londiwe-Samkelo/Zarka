@@ -1,3 +1,5 @@
+import { getLiveFxRate, calculateRemittance } from "./fxService";
+
 export interface UssdSession {
     text: string;
     previousText: string;
@@ -5,8 +7,8 @@ export interface UssdSession {
 
 export function handleUssd(text: string): string {
     const answers = text === "" ? [] : text.split("*");
-    const FEE = 25;
-    const RATE = 0.055;
+    const RATE = getLiveFxRate().zarToUsd;
+    const FEE = calculateRemittance(1, RATE).feeZAR;
 
     if (answers.length === 0) {
         return "CON Zarka\n1. Send money\n2. Check status\n3. Language";
