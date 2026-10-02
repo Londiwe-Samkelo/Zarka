@@ -8,7 +8,7 @@ export const DEFAULT_RATES = {
   Namibia: { currency: "NAD", rate: 1 },
   Zambia: { currency: "ZMW", rate: 1.3 },
 };
-export const DEFAULT_FEE = { minimumZar: 25, percent: 0.03 };
+export const DEFAULT_FEE = { minimumZar: 10, percent: 0.04 };
 
 // Cached server rates if we have them, otherwise the built-in ones.
 export const getRatesOrDefault = (state) => state.rates || { rates: DEFAULT_RATES, fee: DEFAULT_FEE };
