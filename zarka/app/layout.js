@@ -13,12 +13,12 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   title: "Zarka – Send money home",
-  description: "Offline-first money transfers for Southern Africa",
+  description: "Offline-first money transfers for Southern Africa, on smartphones and button phones",
   applicationName: "Zarka",
 };
 
 export const viewport = {
-  themeColor: "#f26a1b",
+  themeColor: "#c8500b",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

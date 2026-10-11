@@ -9,10 +9,12 @@
     "lint": "eslint",
     "api": "node server/index.js",
     "dev:all": "concurrently -n web,api \"npm:dev\" \"npm:api\"",
-    "vambo:test": "node server/scripts/testVambo.js"
+    "vambo:test": "node server/scripts/testVambo.js",
+    "test": "node --test server/tests/api.test.js"
   },
   "dependencies": {
     "express": "^4.22.3",
+    "helmet": "^8.3.0",
     "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8"

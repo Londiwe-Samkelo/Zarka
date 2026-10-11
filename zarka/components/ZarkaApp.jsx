@@ -8,23 +8,27 @@ import { loadLocalData } from "../lib/localData";
 import { registerServiceWorker } from "../lib/pwa";
 import { isOnline, startConnectivityMonitor } from "../lib/engine/connectivity";
 import { syncOutbox, startSyncLoop } from "../lib/engine/outbox";
-import { startTracking, refreshTransfers } from "../lib/engine/tracking";
+import { startTracking, refreshTransfers, refreshIncoming } from "../lib/engine/tracking";
 import { refreshRates } from "../lib/engine/rates";
-import { refreshLanguageMessages } from "../lib/engine/languages";
+import { refreshLanguageMessages, syncProfileLanguage } from "../lib/engine/languages";
 import Header from "./Header";
 import BottomNav from "./BottomNav";
 import Toast from "./Toast";
 import HomeScreen from "./screens/HomeScreen";
 import SendScreen from "./screens/SendScreen";
+import ConfirmScreen from "./screens/ConfirmScreen";
 import TransfersScreen from "./screens/TransfersScreen";
+import CollectScreen from "./screens/CollectScreen";
 import RatesScreen from "./screens/RatesScreen";
 import HelpScreen from "./screens/HelpScreen";
 import LoginScreen from "./screens/LoginScreen";
 
-const SCREENS = { home: HomeScreen, send: SendScreen, history: TransfersScreen, rates: RatesScreen, help: HelpScreen };
+const SCREENS = { home: HomeScreen, send: SendScreen, confirm: ConfirmScreen, history: TransfersScreen, collect: CollectScreen, rates: RatesScreen, help: HelpScreen };
+const NEEDS_LOGIN = { send: "send", collect: "collect" }; // screens that need a login, and where to go after
 const say = (key) => translate(getState().language, key);
 
-export default function ZarkaApp() {
+// embedded = drawn inside the phone frame on the demo page (no fixed positioning)
+export default function ZarkaApp({ embedded = false }) {
   const state = useStore();
   const online = isOnline(state);
 
@@ -43,14 +47,16 @@ export default function ZarkaApp() {
     };
   }, []);
 
-  // Whenever we come back online: refresh rates, send the queue, update statuses.
+  // Whenever we come back online: refresh rates and text, send the queue, update statuses.
   useEffect(() => {
     if (!online || !state.ready) return;
     refreshRates();
     refreshLanguageMessages(getState().language);
+    syncProfileLanguage();
     refreshTransfers();
+    refreshIncoming();
     syncOutbox({ force: true }).then((count) => count && showToast(say("synced")));
-  }, [online, state.ready]);
+  }, [online, state.ready, state.session]);
 
   useEffect(() => {
     document.documentElement.lang = state.language;
@@ -60,13 +66,26 @@ export default function ZarkaApp() {
     if (state.ready && !state.session && state.outbox.length) showToast(say("loginNeeded"));
   }, [state.ready, state.session, state.outbox.length]);
 
-  // Sending money needs a login (done once; the app then works offline).
-  const Screen = state.view === "send" && !state.session ? LoginScreen : SCREENS[state.view] || HomeScreen;
+  const returnTo = NEEDS_LOGIN[state.view];
+  const loginHint = state.view === "collect" ? say("collectLoginHint") : undefined;
+  const screen = returnTo && !state.session
+    ? <LoginScreen returnTo={returnTo} hint={loginHint} />
+    : (() => { const Screen = SCREENS[state.view] || HomeScreen; return <Screen />; })();
 
+  if (embedded) {
+    return (
+      <div className="relative flex h-full flex-col bg-background">
+        <Header />
+        <main data-scroll-root className="flex-1 overflow-y-auto px-4 py-4">{state.ready && screen}</main>
+        <BottomNav embedded />
+        <Toast embedded />
+      </div>
+    );
+  }
   return (
     <div className="mx-auto flex w-full max-w-md flex-1 flex-col pb-24">
       <Header />
-      <main className="flex-1 pt-2">{state.ready && <Screen />}</main>
+      <main className="flex-1 px-4 py-4">{state.ready && screen}</main>
       <BottomNav />
       <Toast />
     </div>

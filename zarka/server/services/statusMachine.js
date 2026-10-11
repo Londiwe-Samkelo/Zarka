@@ -12,6 +12,7 @@ export function statusAt(createdAt, now = Date.now()) {
 // Returns an updated copy (with new status log entries) or null if nothing changed.
 export function advanceTransfer(transfer, now = Date.now()) {
   const from = STATUSES.indexOf(transfer.status);
+  if (from < 0) return null; // collected (or failed) transfers never move back
   const to = STATUSES.indexOf(statusAt(transfer.createdAt, now));
   if (to <= from) return null;
   const at = new Date(now).toISOString();

@@ -1,6 +1,10 @@
 // Shared Tailwind class strings so every screen looks the same.
-export const cardClass = "mx-4 my-3 rounded-2xl border border-line bg-card p-4";
-export const inputClass = "w-full rounded-xl border border-line bg-background p-3.5 text-lg text-foreground";
-export const labelClass = "mb-1 mt-3 block font-semibold";
-export const buttonClass = "mt-4 w-full rounded-2xl bg-zarka p-4 text-lg font-bold text-white";
-export const tileClass = "min-h-24 rounded-2xl border border-line bg-card p-4 text-center text-base font-bold text-foreground";
+const focus = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zarka";
+export const cardClass = "rounded-2xl border border-line bg-card p-5";
+export const inputClass = `w-full rounded-xl border border-line bg-background px-4 py-3 text-base text-foreground ${focus}`;
+export const phoneInputClass = `w-full rounded-r-xl border border-line bg-background px-4 py-3 text-base text-foreground ${focus}`;
+export const labelClass = "mb-1.5 mt-4 block text-sm font-semibold text-foreground first:mt-0";
+export const buttonClass = `w-full rounded-xl bg-zarka px-4 py-3.5 text-base font-semibold text-white transition hover:bg-zarka-dark disabled:opacity-60 ${focus}`;
+export const secondaryButtonClass = `w-full rounded-xl border border-line bg-card px-4 py-3.5 text-base font-semibold text-foreground transition hover:bg-zarka-soft disabled:opacity-60 ${focus}`;
+export const headingClass = "text-xl font-bold text-foreground";
+export const mutedClass = "text-sm text-mute";

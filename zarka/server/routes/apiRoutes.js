@@ -1,8 +1,12 @@
 import { Router } from "express";
 import { getRates, quoteTransfer } from "../services/ratesService.js";
-import { createTransfer, refreshTransfer, buildReceiptText } from "../services/transfersService.js";
-import { findTransferById, listTransfersBySender } from "../store/transfersStore.js";
-import { translateText } from "../services/vamboService.js";
+import {
+  createTransfer, refreshTransfer, collectTransfer, buildReceiptText, listSent, listIncoming, toSenderView, toReceiverView,
+} from "../services/transfersService.js";
+import { findTransferById } from "../store/transfersStore.js";
+import { updateProfile } from "../store/profilesStore.js";
+import { SUPPORTED_SMS_LANGUAGES } from "../i18n/messages.js";
+import { requestTranslation } from "../services/vamboService.js";
 import { getUiMessages } from "../services/uiMessagesService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { FEE } from "../config.js";
@@ -21,11 +25,17 @@ export function handleGetQuote(req, res) {
 
 export async function handleCreateTransfer(req, res) {
   const result = await createTransfer({ ...(req.body || {}), senderPhone: req.user.phone, channel: "app" });
-  res.status(result.error ? 400 : 200).json(result);
+  if (result.error) return res.status(400).json({ error: result.error, code: result.code });
+  res.json({ transfer: toSenderView(result.transfer), duplicate: result.duplicate });
 }
 
 export async function handleListTransfers(req, res) {
-  res.json(await Promise.all(listTransfersBySender(req.user.phone).map(refreshTransfer)));
+  res.json((await Promise.all(listSent(req.user.phone).map(refreshTransfer))).map(toSenderView));
+}
+
+export async function handleListIncoming(req, res) {
+  const refreshed = await Promise.all(listIncoming(req.user.phone).map(refreshTransfer));
+  res.json(refreshed.map(toReceiverView));
 }
 
 async function findOwnTransfer(req) {
@@ -35,13 +45,26 @@ async function findOwnTransfer(req) {
 
 export async function handleGetTransfer(req, res) {
   const transfer = await findOwnTransfer(req);
-  transfer ? res.json(transfer) : res.status(404).json({ error: "not found" });
+  transfer ? res.json(toSenderView(transfer)) : res.status(404).json({ error: "not found" });
 }
 
 export async function handleGetReceipt(req, res) {
   const transfer = await findOwnTransfer(req);
   if (!transfer) return res.status(404).json({ error: "not found" });
   res.json({ text: await buildReceiptText(transfer, req.query.lang) });
+}
+
+export async function handleCollect(req, res) {
+  const result = await collectTransfer({ id: req.params.id, phone: req.user.phone, code: String(req.body?.code ?? "") });
+  if (result.error) return res.status(result.code === "not_found" ? 404 : 400).json(result);
+  res.json({ transfer: toReceiverView(result.transfer) });
+}
+
+// The app's language also decides which language our texts to this person are written in.
+export function handleSetProfile(req, res) {
+  const language = SUPPORTED_SMS_LANGUAGES.includes(req.body?.language) ? req.body.language : "en";
+  updateProfile(req.user.phone, { language });
+  res.json({ ok: true, language });
 }
 
 export async function handleGetUiMessages(req, res) {
@@ -54,7 +77,8 @@ export async function handleTranslate(req, res) {
   if (typeof text !== "string" || !text.trim() || text.length > MAX_TRANSLATE_CHARS) {
     return res.status(400).json({ error: `text must be 1 to ${MAX_TRANSLATE_CHARS} characters` });
   }
-  res.json({ text: await translateText(text, lang) });
+  const translated = await requestTranslation(text, lang);
+  res.json({ text: translated ?? text, translated: translated !== null });
 }
 
 apiRouter.get("/health", handleHealthCheck);
@@ -64,5 +88,8 @@ apiRouter.post("/transfers", requireAuth, handleCreateTransfer);
 apiRouter.get("/transfers", requireAuth, handleListTransfers);
 apiRouter.get("/transfers/:id", requireAuth, handleGetTransfer);
 apiRouter.get("/transfers/:id/receipt", requireAuth, handleGetReceipt);
+apiRouter.post("/transfers/:id/collect", requireAuth, handleCollect);
+apiRouter.get("/incoming", requireAuth, handleListIncoming);
+apiRouter.post("/profile", requireAuth, handleSetProfile);
 apiRouter.get("/messages", handleGetUiMessages);
 apiRouter.post("/translate", requireAuth, handleTranslate); // login required: each call can cost money

@@ -1,0 +1,66 @@
+{
+  "South Africa": {
+    "dial": "+27",
+    "digits": [
+      9,
+      9
+    ],
+    "example": "82 123 4567"
+  },
+  "Zimbabwe": {
+    "dial": "+263",
+    "digits": [
+      9,
+      9
+    ],
+    "example": "77 123 4567"
+  },
+  "Mozambique": {
+    "dial": "+258",
+    "digits": [
+      9,
+      9
+    ],
+    "example": "84 123 4567"
+  },
+  "Malawi": {
+    "dial": "+265",
+    "digits": [
+      9,
+      9
+    ],
+    "example": "99 123 4567"
+  },
+  "Lesotho": {
+    "dial": "+266",
+    "digits": [
+      8,
+      8
+    ],
+    "example": "5812 3456"
+  },
+  "Botswana": {
+    "dial": "+267",
+    "digits": [
+      7,
+      8
+    ],
+    "example": "71 234 567"
+  },
+  "Namibia": {
+    "dial": "+264",
+    "digits": [
+      7,
+      9
+    ],
+    "example": "81 123 4567"
+  },
+  "Zambia": {
+    "dial": "+260",
+    "digits": [
+      9,
+      9
+    ],
+    "example": "97 123 4567"
+  }
+}

@@ -63,66 +63,81 @@ Zarka is an offline-first money transfer app for Southern Africa. Smartphones sa
 
 **You need:** [Node.js](https://nodejs.org) 20.9 or newer (22 recommended) and npm. Check with `node -v`.
 
-The project has two parts that run together: the app (Next.js, in `zarka/app` and `zarka/components`) and the API (Express, in `zarka/server`). Next.js forwards `/api/*` to the API, so the phone only talks to one address.
+Two parts run together: the app (Next.js, in `zarka/app` and `zarka/components`) and the API (Express, in `zarka/server`). Next.js forwards `/api/*` and `/sim/*` to the API, so the browser talks to one address.
 
 ```bash
 cd zarka
 npm install
-cp .env.example .env     # Windows: copy .env.example .env   (then edit .env; the Vambo key is optional at first)
+cp .env.example .env     # Windows: copy .env.example .env
 npm run dev:all          # app on http://localhost:3000, API on http://localhost:4000
 ```
 
-Open http://localhost:3000. To try it:
+Other commands: `npm run dev` (app only), `npm run api` (API only), `npm test` (16 automated API tests), `npm run vambo:test` (checks your Vambo key), `npm run build` then `npm start` (production build, needed to try installing the app and using it with no internet).
 
-1. Tap **Send money**. You will be asked to log in: type a phone number with its country code (for example `+27820000000`), tap **Send me a code**, and type the **Test code** shown on screen (in development the code is shown instead of texted; it is also printed in the API terminal).
-2. Fill in the transfer and tap **Confirm & send**. Watch the 4-stage tracker on the **History** tab move from Received to Processing to Ready to collect (about 15 seconds).
-3. Tap **Test offline** in the orange bar, send another transfer, and see it wait on the phone ("Saved on phone"). Tap **Go online** and it sends.
-4. Switch the language in the top corner. Shona is built in; other languages need your Vambo key.
+## The two-sided demo
 
-Other commands: `npm run dev` starts only the app, `npm run api` starts only the API, `npm run vambo:test` checks your Vambo key.
+Open **http://localhost:3000/demo**. Left: Thandi in Johannesburg uses the smartphone app. Right: her mother Mai in Harare uses a basic phone with a keypad. A five-step strip across the top follows the transfer.
 
-**Production build** (needed to try the installable, works-with-no-internet version): `npm run build`, then `npm start` and, in a second terminal, `npm run api`. The service worker only turns on in a production build.
+1. In the app, tap **Send**, log in as `+27 82 123 4567` (the test code is shown on screen, or in the phone inbox if `SHOW_DEV_CODE=false`).
+2. Send money to Zimbabwe, recipient `0771234567`. Review, then confirm.
+3. On Mai's phone, press **Messages**: she has a text saying money is coming. Soon after, a second text with her **pickup code**.
+4. Mai collects: press **Type *120*9275#**, **OK**, choose **4**, **1**, type the code, **OK**. (Or text `COLLECT 123456`.)
+5. Thandi's tracker finishes and she gets a text that Mai collected.
 
-**On a real phone:** your phone and computer must be on the same Wi-Fi. Open `http://YOUR-COMPUTER-IP:3000` (not `localhost`). Plain http on a local network can't install the app or cache it for offline use; for that, deploy it over https or use a tunnel such as `ngrok`. Set `API_URL` if the API runs somewhere other than `http://localhost:4000`.
+To send from the basic phone: first create a PIN (**Type *120*9275#**, **OK**, **6**, type a 4-digit PIN that is not easy to guess such as `4729`, repeat it), then choose **1** and follow the menu.
 
-### Where each box in the diagram lives
+## Who can do what
+
+| | Smartphone app | Basic phone (USSD and SMS) |
+| --- | --- | --- |
+| Log in | Phone number + 6-digit code by SMS | The network identifies the phone. Sending needs a 4-digit PIN. |
+| Send money | Review screen, works offline | USSD menu 1, or `SEND ZW 500 0771234567` then `YES <PIN>` |
+| Follow a transfer | 4-step tracker | USSD menu 3, or `STATUS` |
+| Collect money | Collect tab and the pickup code | USSD menu 4, or `COLLECT <code>` |
+| Language | English, Shona and more through Vambo AI | USSD menu 5, or `LANG SN` / `LANG EN` |
+
+Texts Zarka sends: to the sender when a transfer is received, ready to collect, and collected; to the receiver when money is on its way, when it is ready (with the pickup code), and when collected. They are written in each person's own language (English or chiShona).
+
+## Security measures
+
+- **Login:** one-time codes are stored only as keyed hashes, expire in 5 minutes, allow 5 attempts, and are limited per phone and per hour. Logins are signed tokens backed by a server-side session, so logging out really ends them. Sessions last 7 days.
+- **PINs:** 4 digits, stored with scrypt and a salt, easy PINs refused, locked for 15 minutes after 3 wrong tries. Needed for every send from a basic phone.
+- **Pickup codes:** random 6 digits, texted only to the receiver, stored hashed, never returned by the API, locked for 15 minutes after 3 wrong tries.
+- **Money rules:** the server works out all fees and rates itself; limits per transfer, per hour and per day; transfer IDs make a retry safe and cannot be used by anyone else.
+- **Privacy:** people only see what they should (the receiver sees a masked sender number); PINs and codes are hidden in logs and in the demo inbox; the audit log records events with masked numbers and never secrets.
+- **Gateway:** `/ussd` and `/sms` can require a shared secret (`GATEWAY_SECRET`) so only your provider can call them.
+- **Server hardening:** security headers (Helmet and Next.js), request size limits, per-IP rate limits (stricter on login), errors that do not leak details, atomic database writes, and a refusal to start in production without a real `AUTH_SECRET`.
+- **Still to do before real money:** a real database, HTTPS everywhere, KYC and sanctions checks through the licensed partner, SIM-swap checks, fraud monitoring, and an independent security review.
+
+## Where each box in the diagram lives
 
 | Box | Files |
 | --- | --- |
-| Smartphone app | `app/page.js`, `components/` (screens, `StatusTracker.jsx` for the 4 stages), English + Shona in `lib/messages.js` |
-| Connectivity engine | `lib/engine/connectivity.js` (online check), `lib/engine/outbox.js` (queue, retry with backoff), `lib/engine/tracking.js` (status updates), `lib/engine/rates.js` |
-| Local store (IndexedDB) | `lib/idb.js`, `lib/localData.js` (outbox, history, cached rates, session, language), `public/sw.js` (app shell) |
-| API layer | `server/routes/apiRoutes.js`, `server/routes/authRoutes.js`, `server/middleware/` (login check, rate limit) |
-| Fee + exchange rate (mock FX) | `server/services/ratesService.js`, `lib/quote.js` (same maths on the phone) |
-| Transfers + status machine | `server/services/transfersService.js`, `server/services/statusMachine.js` (received, processing, ready to collect) |
-| USSD / SMS gateway | `server/routes/ussdRoutes.js`, `server/routes/smsRoutes.js`, `server/services/smsCommandService.js` |
-| Notifies: money ready to collect | `refreshTransfer` in `server/services/transfersService.js` texts the recipient |
-| Database | `server/store/transfersStore.js` (JSON file `server/data/db.json`: transfers, status log, fee records) |
-| Vambo AI | `server/services/vamboService.js`, `uiMessagesService.js`, `lib/engine/languages.js` (app text, receipts, other languages) |
+| Smartphone app | `app/page.js`, `components/` (screens, `StatusTracker.jsx`), text in `lib/messages/` |
+| Basic phone (demo) | `components/demo/ButtonPhone.jsx`, `DemoStage.jsx`, `app/demo/page.js` |
+| Connectivity engine | `lib/engine/connectivity.js`, `outbox.js` (queue, retry with backoff), `tracking.js`, `rates.js`, `languages.js` |
+| Local store (IndexedDB) | `lib/idb.js`, `lib/localData.js`, `public/sw.js` |
+| Gateway | `server/routes/apiRoutes.js`, `authRoutes.js`, `ussdRoutes.js`, `smsRoutes.js`, `server/middleware/` |
+| Security | `server/services/authService.js`, `otpService.js`, `pinService.js`, `auditService.js`, `server/store/sessionsStore.js` |
+| Transfers + status machine | `server/services/transfersService.js`, `statusMachine.js` |
+| Fee and exchange rate | `server/services/ratesService.js`, `lib/quote.js` (same maths on the phone) |
+| SMS notifications | `server/services/notificationService.js`, `smsService.js`, `server/i18n/messages.js` |
+| Vambo AI | `server/services/vamboService.js`, `uiMessagesService.js`, `lib/engine/languages.js` |
+| Database | `server/store/` (JSON file in `server/data/`; swap for Postgres) |
+| Demo phone network | `server/routes/simRoutes.js` (only exists while SMS is simulated) |
 
-### Three ways to use Zarka
+## Languages (Vambo AI)
 
-- **Smartphone app:** log in once with a phone number and an SMS code (needs internet once), then send offline. Transfers wait on the phone and sync later.
-- **Button phone, USSD:** `POST /ussd`. The phone network identifies the caller.
-- **Button phone, SMS:** text `SEND ZW 500 +26377123456`, then reply `YES`. Also `RATES`, `CANCEL`, `HELP`. `POST /sms`.
+- English and Shona text is bundled (`lib/messages/en.json`, `sn.json`), so the app always works offline. USSD menus and SMS texts are in `server/i18n/messages.js`.
+- Other app languages come from Vambo AI through `GET /api/messages?lang=zu`, are saved on the server and on the phone, and work offline after the first load.
+- Sesotho, Setswana, Xitsonga, Chichewa and siSwati must be switched on ("next mode") in your Vambo settings.
+- Run `npm run vambo:test -- sn "Send money home"` with your key to confirm the request format.
+- All chiShona and translated text needs a native speaker's review before real users see it. Newer English text has no Shona yet and falls back to English until Vambo translates it.
 
-### Languages (Vambo AI)
+## Environment
 
-- **Bundled backup text:** English and Shona live in `lib/messages/en.json` and `sn.json`, so they always work offline.
-- **Other languages:** the app asks the server (`GET /api/messages?lang=zu`), the server translates the English file with Vambo AI (`server/services/uiMessagesService.js`), saves the result in `server/data/translations/`, and the phone keeps its own copy in IndexedDB. A new language needs internet once, then works offline. If Vambo fails for a string, the app shows the bundled text, then English.
-- **Receipts:** `GET /api/transfers/:id/receipt?lang=sn` returns the receipt text translated by Vambo.
-- **Login for paid calls:** asking a question in Help (`POST /api/translate`) needs a login and is limited to 500 characters. App text (`GET /api/messages`) works before login, but the server translates each language only once and saves it.
-- **Languages in the picker:** English, Shona, Zulu, Xhosa and Afrikaans work on Vambo's standard plan. Sesotho, Setswana, Xitsonga, Chichewa and siSwati need "next mode" switched on in your Vambo settings. The list is in `lib/i18n.js` and `server/config.js`.
-- **Set it up:** copy `.env.example` to `.env`, add `VAMBO_API_KEY`, then run `npm run vambo:test -- sn "Send money home"`. It prints Vambo's raw reply, so you can confirm the request and reply format match your account.
+See `.env.example`. The important ones: `AUTH_SECRET` (required in production), `GATEWAY_SECRET`, `VAMBO_API_KEY`, `SHOW_DEV_CODE`, `SMS_MODE`, `NEXT_PUBLIC_DEMO_TOOLS`.
 
-### Environment
+## Not real yet
 
-- `AUTH_SECRET`: signing key for login tokens (required in production)
-- `NODE_ENV=production`: hides test login codes and SMS logs
-- `API_URL`: where Next.js finds the API (default `http://localhost:4000`)
-- `VAMBO_API_KEY`: your Vambo AI key. Optional: `VAMBO_API_URL` (default `https://api.vambo.ai/v1/translate`) and `VAMBO_CODE_STYLE` (`iso3` for `sna`, `zul`; `iso1` for `sn`, `zu`)
-- You can put these in `zarka/.env` (see `.env.example`) instead of setting them in the shell
-
-### Not real yet
-
-Payouts and SMS sending are mocks, status changes are time-based (5s processing, 15s ready), there is no PIN for button-phone users, the database is a JSON file, and rates are fixed demo numbers. The Vambo request format follows Vambo's developer page and has only been tested against a mock, so run `npm run vambo:test` with your key. All translated text (Shona included) needs a native speaker's review.
+Payouts and SMS sending are simulated (status changes on a timer: 5 s, then 15 s), the database is a JSON file, rates are fixed demo numbers, limits are demo values, Airtime and Pay bills are marked "Soon", and nothing here has been security reviewed. The app screens have only been checked by building and linting, not by hand in a browser.

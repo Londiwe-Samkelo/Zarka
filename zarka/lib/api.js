@@ -1,4 +1,5 @@
-import { getState } from "./store";
+import { getState, setState } from "./store";
+import { saveSetting } from "./localData";
 
 // All calls go to /api/*, which Next.js forwards to the Express server (see next.config.mjs).
 const jsonHeaders = { "Content-Type": "application/json" };
@@ -7,12 +8,25 @@ const authHeaders = () => {
   return session ? { ...jsonHeaders, Authorization: `Bearer ${session.token}` } : jsonHeaders;
 };
 
-async function postJson(url, body) {
+// Login expired or cancelled on the server: forget it here too, so the app asks for a new login.
+function forgetSession() {
+  setState({ session: null, incoming: [] });
+  saveSetting("session", null);
+}
+
+async function request(method, url, body, { authed = false } = {}) {
   try {
-    const response = await fetch(url, { method: "POST", headers: jsonHeaders, body: JSON.stringify(body) });
-    return await response.json();
+    const response = await fetch(url, {
+      method, cache: "no-store",
+      headers: authed ? authHeaders() : jsonHeaders,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    let data = null;
+    try { data = await response.json(); } catch { /* no body */ }
+    if (authed && response.status === 401) forgetSession();
+    return { status: response.status, ok: response.ok, data };
   } catch {
-    return { error: "no connection" };
+    return { status: 0, ok: false, data: { error: "no connection" } };
   }
 }
 
@@ -21,10 +35,8 @@ export async function pingServer() {
 }
 
 export async function fetchRates() {
-  try {
-    const response = await fetch("/api/rates", { cache: "no-store" });
-    return response.ok ? await response.json() : null;
-  } catch { return null; }
+  const { ok, data } = await request("GET", "/api/rates");
+  return ok ? data : null;
 }
 
 // Returns { status, body }: 2xx accepted, 401 login needed, 400 rejected. Throws if the network fails.
@@ -36,27 +48,37 @@ export async function postTransfer(transfer) {
 }
 
 export async function fetchMyTransfers() {
-  try {
-    const response = await fetch("/api/transfers", { headers: authHeaders(), cache: "no-store" });
-    return response.ok ? await response.json() : null;
-  } catch { return null; }
+  const { ok, data } = await request("GET", "/api/transfers", undefined, { authed: true });
+  return ok ? data : null;
+}
+
+export async function fetchIncoming() {
+  const { ok, data } = await request("GET", "/api/incoming", undefined, { authed: true });
+  return ok ? data : null;
+}
+
+// Receiver proves it is them with the code we texted. Returns { ok, transfer } or { ok: false, code, attemptsLeft, minutes }.
+export async function collectWithCode(id, code) {
+  const { ok, data } = await request("POST", `/api/transfers/${encodeURIComponent(id)}/collect`, { code }, { authed: true });
+  return ok ? { ok: true, transfer: data.transfer } : { ok: false, ...(data || {}) };
+}
+
+export const saveProfileLanguage = (language) => request("POST", "/api/profile", { language }, { authed: true });
+export const requestOtp = (phone) => request("POST", "/api/auth/request-otp", { phone }).then((r) => r.data);
+export const verifyOtp = (phone, code) => request("POST", "/api/auth/verify-otp", { phone, code }).then((r) => r.data);
+
+export async function logoutOnServer() {
+  await request("POST", "/api/auth/logout", {}, { authed: true });
 }
 
 // Vambo AI translated UI text for one language. Returns { language, messages, complete } or null.
 export async function fetchUiMessages(language) {
-  try {
-    const response = await fetch(`/api/messages?lang=${encodeURIComponent(language)}`, { cache: "no-store" });
-    return response.ok ? await response.json() : null;
-  } catch { return null; }
+  const { ok, data } = await request("GET", `/api/messages?lang=${encodeURIComponent(language)}`);
+  return ok ? data : null;
 }
 
-export const requestOtp = (phone) => postJson("/api/auth/request-otp", { phone });
-export const verifyOtp = (phone, code) => postJson("/api/auth/verify-otp", { phone, code });
-
-// Needs a login. If anything goes wrong we return the original text.
+// Needs a login. Returns { text, translated }. translated is false when Vambo is off or failed.
 export async function requestTranslation(text, lang) {
-  try {
-    const response = await fetch("/api/translate", { method: "POST", headers: authHeaders(), body: JSON.stringify({ text, lang }) });
-    return (await response.json()).text || text;
-  } catch { return text; }
+  const { data } = await request("POST", "/api/translate", { text, lang }, { authed: true });
+  return { text: data?.text ?? text, translated: Boolean(data?.translated) };
 }

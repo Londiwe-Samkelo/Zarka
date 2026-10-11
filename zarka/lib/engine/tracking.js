@@ -1,10 +1,10 @@
 import { getState, setState } from "../store";
-import { fetchMyTransfers } from "../api";
+import { fetchMyTransfers, fetchIncoming } from "../api";
 import { isOnline } from "./connectivity";
 import { saveHistoryItem } from "../localData";
 
 const POLL_INTERVAL_MS = 5000;
-const isOpen = (transfer) => transfer.status !== "ready" && transfer.status !== "failed";
+const isOpen = (transfer) => transfer.status !== "collected" && transfer.status !== "failed";
 
 // Asks the server for the latest status of transfers that are not finished yet.
 export async function refreshTransfers() {
@@ -20,7 +20,16 @@ export async function refreshTransfers() {
   await Promise.all(changed.map(saveHistoryItem));
 }
 
+// Money sent to this phone number (the receiver's side of the app).
+export async function refreshIncoming() {
+  const state = getState();
+  if (!isOnline(state) || !state.session) return;
+  const list = await fetchIncoming();
+  if (list) setState({ incoming: list });
+}
+
 export function startTracking() {
-  const timer = setInterval(refreshTransfers, POLL_INTERVAL_MS);
+  const run = () => { refreshTransfers(); refreshIncoming(); };
+  const timer = setInterval(run, POLL_INTERVAL_MS);
   return () => clearInterval(timer);
 }

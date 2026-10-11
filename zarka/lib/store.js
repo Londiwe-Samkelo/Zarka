@@ -9,6 +9,8 @@ let state = {
   session: null,          // { token, phone } after login
   outbox: [],             // transfers saved on this phone, waiting to be sent
   history: [],            // transfers the server has received
+  incoming: [],           // money sent TO this phone number (receiver side)
+  lastTransferId: null,   // the transfer just sent, shown on the confirmation screen
   rates: null,            // { rates, fee } cached from the server
   ratesUpdatedAt: null,
   forceOffline: false,    // "Test offline" switch
@@ -35,4 +37,5 @@ export const useStore = () => useSyncExternalStore(subscribe, getState, getState
 export function navigateTo(view) {
   setState({ view });
   window.scrollTo(0, 0);
+  document.querySelector("[data-scroll-root]")?.scrollTo?.(0, 0); // the demo phone frame scrolls on its own
 }

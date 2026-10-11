@@ -1,54 +1,98 @@
-import { SMS_COUNTRY_CODES } from "../config.js";
+import crypto from "node:crypto";
+import { LIMITS, LIMIT_VARS, SMS_COUNTRY_CODES } from "../config.js";
+import { msg, SUPPORTED_SMS_LANGUAGES } from "../i18n/messages.js";
+import { getProfile, updateProfile } from "../store/profilesStore.js";
 import { getRates, quoteTransfer } from "./ratesService.js";
-import { createTransfer } from "./transfersService.js";
+import { createTransfer, collectTransfer, listIncoming } from "./transfersService.js";
 import { normalizePhone } from "./authService.js";
+import { normalizeNumberForCountry } from "./phoneService.js";
+import { hasPin, verifyPin } from "./pinService.js";
+import { statusSummary } from "./summaryService.js";
 
 const PENDING_TTL_MS = 10 * 60 * 1000;
-const pendingRequests = new Map(); // sender phone -> request waiting for YES
+const pendingRequests = new Map(); // sender phone -> request waiting for "YES <PIN>"
 
-const HELP_TEXT =
-  "Zarka SMS:\nSEND ZW 500 +26377123456\n(ZW MZ MW LS BW NA ZM, amount in ZAR)\nRATES\nYES to confirm, CANCEL to stop";
+const safeId = (value) => String(value ?? "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 50) || crypto.randomUUID();
 
-// "SEND ZW 500 +26377123456" -> { command: "SEND", country, amount, recipient }
-export function parseSmsCommand(text) {
-  const [command, ...rest] = String(text || "").trim().toUpperCase().split(/\s+/);
-  if (command === "SEND") {
-    const [code, amount, phone] = rest;
-    const country = SMS_COUNTRY_CODES[code];
-    const recipient = normalizePhone(phone);
-    if (!country || !recipient || !(Number(amount) > 0)) return { command: "INVALID" };
-    return { command: "SEND", country, amount: Number(amount), recipient };
-  }
-  return ["YES", "CANCEL", "RATES", "HELP"].includes(command) ? { command } : { command: "INVALID" };
+export const pinProblem = (language, result) =>
+  result.error === "locked" ? msg(language, "pinLocked", { minutes: result.minutes })
+  : result.error === "wrong_pin" ? msg(language, "pinWrong", { left: result.attemptsLeft })
+  : msg(language, "smsNeedPin");
+
+export const limitProblem = (language, code) =>
+  ({ limit_min: "limitMin", limit_max: "limitMax", limit_daily: "limitDaily", limit_rate: "limitRate" }[code])
+    ? msg(language, { limit_min: "limitMin", limit_max: "limitMax", limit_daily: "limitDaily", limit_rate: "limitRate" }[code], LIMIT_VARS)
+    : msg(language, "tryAgain");
+
+// "SEND ZW 500 0771234567" -> { country, amount, recipient } or null
+export function parseSendCommand(args) {
+  const [code, amount, phone] = args;
+  const country = SMS_COUNTRY_CODES[String(code).toUpperCase()];
+  const recipient = normalizeNumberForCountry(country, phone);
+  return country && recipient && Number(amount) > 0 ? { country, amount: Number(amount), recipient } : null;
 }
 
 export async function processSmsCommand({ from, text, messageId }) {
   const sender = normalizePhone(from);
   if (!sender) return "Sorry, we could not read your number.";
-  const cmd = parseSmsCommand(text);
+  const language = getProfile(sender).language || "en";
+  const t = (key, vars) => msg(language, key, vars);
+  const [word = "", ...args] = String(text || "").trim().replace(/\s+/g, " ").split(" ");
 
-  if (cmd.command === "RATES") {
-    return "Per R1:\n" + Object.entries(getRates()).map(([c, r]) => `${c} ${r.rate} ${r.currency}`).join("\n");
+  switch (word.toUpperCase()) {
+    case "RATES":
+      return t("ratesTitle", { lines: Object.entries(getRates()).map(([c, r]) => `${c} ${r.rate} ${r.currency}`).join("\n") });
+
+    case "STATUS":
+      return statusSummary(sender, language);
+
+    case "CANCEL":
+      pendingRequests.delete(sender);
+      return t("cancelled");
+
+    case "LANG": {
+      const chosen = String(args[0] || "").toLowerCase();
+      if (!SUPPORTED_SMS_LANGUAGES.includes(chosen)) return t("smsHelp");
+      updateProfile(sender, { language: chosen });
+      return msg(chosen, "langSaved");
+    }
+
+    case "SEND": {
+      const request = parseSendCommand(args);
+      if (!request) return t("smsHelp");
+      if (request.amount < LIMITS.minZar) return t("limitMin", LIMIT_VARS);
+      if (request.amount > LIMITS.maxZar) return t("limitMax", LIMIT_VARS);
+      if (!hasPin(sender)) return t("smsNeedPin");
+      const quote = quoteTransfer(request.country, request.amount);
+      pendingRequests.set(sender, { ...request, id: `sms-${safeId(messageId)}`, expiresAt: Date.now() + PENDING_TTL_MS });
+      return t("smsConfirm", { amount: request.amount, phone: request.recipient, country: request.country, ...quote, total: +(request.amount + quote.fee).toFixed(2) });
+    }
+
+    case "YES": {
+      const request = pendingRequests.get(sender);
+      if (!request || request.expiresAt < Date.now()) return t("smsNothing");
+      const check = await verifyPin(sender, args[0] ?? "");
+      if (!check.ok) return pinProblem(language, check); // the request stays open so they can retry the PIN
+      pendingRequests.delete(sender);
+      // request.id doubles as the idempotency key, so a duplicate delivery cannot double-send.
+      const result = await createTransfer({
+        id: request.id, to: request.recipient, phone: request.recipient, country: request.country,
+        amount: request.amount, senderPhone: sender, channel: "sms",
+      });
+      if (result.error) return limitProblem(language, result.code);
+      return t("sentOk", { amount: request.amount, phone: request.recipient, ref: result.transfer.ref });
+    }
+
+    case "COLLECT": {
+      const ready = listIncoming(sender).find((x) => x.status === "ready");
+      if (!ready) return t("collectNone");
+      const result = await collectTransfer({ id: ready.id, phone: sender, code: args[0] ?? "" });
+      if (result.transfer) return t("collectOk", { receive: ready.receive, currency: ready.currency, ref: ready.ref });
+      if (result.code === "locked") return t("collectLocked", { minutes: result.minutes });
+      return result.code === "wrong_code" ? t("collectWrong", { left: result.attemptsLeft }) : t("tryAgain");
+    }
+
+    default:
+      return t("smsHelp");
   }
-  if (cmd.command === "CANCEL") {
-    pendingRequests.delete(sender);
-    return "Cancelled.";
-  }
-  if (cmd.command === "SEND") {
-    const quote = quoteTransfer(cmd.country, cmd.amount);
-    pendingRequests.set(sender, { ...cmd, id: `sms-${messageId || Date.now()}`, expiresAt: Date.now() + PENDING_TTL_MS });
-    return `Send R${cmd.amount} to ${cmd.recipient} (${cmd.country})? Fee R${quote.fee}, they get ${quote.receive} ${quote.currency}. Reply YES to confirm or CANCEL.`;
-  }
-  if (cmd.command === "YES") {
-    const request = pendingRequests.get(sender);
-    if (!request || request.expiresAt < Date.now()) return "Nothing to confirm. Text: SEND ZW 500 +26377123456";
-    pendingRequests.delete(sender);
-    // request.id doubles as the idempotency key, so a duplicate delivery cannot double-send.
-    const result = await createTransfer({
-      id: request.id, to: request.recipient, phone: request.recipient,
-      country: request.country, amount: request.amount, senderPhone: sender, channel: "sms",
-    });
-    return result.error ? "Could not send. Try again." : `Received! R${request.amount} to ${request.recipient}. They get an SMS when it is ready to collect. Ref ${result.transfer.id.slice(-8)}`;
-  }
-  return HELP_TEXT;
 }

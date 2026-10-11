@@ -4,38 +4,41 @@ import { useStore } from "../lib/store";
 import { LANGUAGES, translate } from "../lib/i18n";
 import { isOnline, setForcedOffline } from "../lib/engine/connectivity";
 import { activateLanguage } from "../lib/engine/languages";
+import Icon from "./Icons";
+
+const DEMO_TOOLS = process.env.NEXT_PUBLIC_DEMO_TOOLS !== "off";
 
 export default function Header() {
   const state = useStore();
   const t = (key) => translate(state.language, key);
   const online = isOnline(state);
 
-  const changeLanguage = (event) => activateLanguage(event.target.value);
-
   return (
-    <header className="rounded-b-3xl bg-zarka px-4 pb-5 pt-[calc(env(safe-area-inset-top)+16px)] text-white">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-2xl font-extrabold">Zarka</div>
+    <header className="border-b border-line bg-card px-4 pb-3 pt-[calc(env(safe-area-inset-top)+12px)]">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-zarka text-lg font-extrabold text-white" aria-hidden="true">Z</span>
+          <span className="text-xl font-bold tracking-tight text-foreground">Zarka</span>
+        </div>
         <select
           aria-label="Language"
           value={state.language}
-          onChange={changeLanguage}
-          className="rounded-full bg-white px-3 py-2 text-sm text-[#2b1a0e]"
+          onChange={(event) => activateLanguage(event.target.value)}
+          className="rounded-lg border border-line bg-background px-3 py-2 text-sm text-foreground"
         >
           {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
         </select>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-white/20 px-3 py-2 text-sm">
-        <span className="flex items-center gap-2">
-          <span className={`inline-block h-2.5 w-2.5 rounded-full ${online ? "bg-green-300" : "bg-yellow-300"}`} />
+      <div className="mt-3 flex items-center justify-between gap-2" role="status">
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${online ? "bg-success-soft text-success" : "bg-warning-soft text-warning"}`}>
+          <Icon name={online ? "wifi" : "wifiOff"} className="h-3.5 w-3.5" />
           {online ? t("online") : t("offline")}
         </span>
-        <button
-          onClick={() => setForcedOffline(!state.forceOffline)}
-          className="rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-zarka"
-        >
-          {state.forceOffline ? t("simOn") : t("sim")}
-        </button>
+        {DEMO_TOOLS && (
+          <button onClick={() => setForcedOffline(!state.forceOffline)} className="text-xs font-semibold text-zarka underline underline-offset-2">
+            {state.forceOffline ? t("simOn") : t("sim")}
+          </button>
+        )}
       </div>
     </header>
   );

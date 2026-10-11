@@ -1,5 +1,5 @@
 import { getState, setState } from "../store";
-import { fetchUiMessages } from "../api";
+import { fetchUiMessages, saveProfileLanguage } from "../api";
 import { isOnline } from "./connectivity";
 import { idbGet } from "../idb";
 import { saveSetting } from "../localData";
@@ -20,9 +20,16 @@ export async function refreshLanguageMessages(code) {
   await saveSetting(`messages:${code}`, data.messages);
 }
 
+// Our texts (SMS) to this person are written in the language they picked in the app.
+export async function syncProfileLanguage() {
+  const { session, language } = getState();
+  if (session && isOnline()) await saveProfileLanguage(language);
+}
+
 export async function activateLanguage(code) {
   setState({ language: code });
   saveSetting("language", code);
+  syncProfileLanguage();
   if (code === "en") return;
 
   if (!getState().messagesByLanguage[code]) {

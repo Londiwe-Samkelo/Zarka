@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { AUTH } from "../config.js";
+import { createSession, findActiveSession } from "../store/sessionsStore.js";
 
 export function normalizePhone(input) {
   const phone = String(input || "").replace(/[\s()-]/g, "");
@@ -8,13 +9,15 @@ export function normalizePhone(input) {
 
 const sign = (payload) => crypto.createHmac("sha256", AUTH.secret).update(payload).digest("base64url");
 
-export function signToken(phone) {
-  const payload = Buffer.from(JSON.stringify({ phone, exp: Date.now() + AUTH.tokenTtlMs })).toString("base64url");
+// A token proves who you are and carries a session id the server can cancel (logout).
+export function issueToken(phone) {
+  const session = createSession(phone);
+  const payload = Buffer.from(JSON.stringify({ phone, jti: session.id, exp: session.expiresAt })).toString("base64url");
   return `${payload}.${sign(payload)}`;
 }
 
 export function verifyToken(token) {
-  if (typeof token !== "string") return null;
+  if (typeof token !== "string" || token.length > 600) return null;
   const [payload, signature] = token.split(".");
   if (!payload || !signature) return null;
   const given = Buffer.from(signature);
@@ -22,6 +25,7 @@ export function verifyToken(token) {
   if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, "base64url").toString());
-    return data.exp > Date.now() ? data : null;
+    if (!(data.exp > Date.now()) || !findActiveSession(data.jti)) return null;
+    return { phone: data.phone, jti: data.jti };
   } catch { return null; }
 }

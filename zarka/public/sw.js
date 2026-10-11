@@ -16,7 +16,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || url.pathname.startsWith("/sim/")) return;
 
   // Hashed build files never change: serve from cache first.
   if (url.pathname.startsWith("/_next/static/")) {
